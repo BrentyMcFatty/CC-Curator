@@ -45,7 +45,7 @@ end
 ---@param item string
 ---@param count number
 ---@return table item_list The list of items that need to be moved
----@return number remainder The remainder in case there were not enough items to satisfy the request
+---@return number? remainder The remainder in case there were not enough items to satisfy the request
 local function searchItem(list,item,count)
   local requests = {}
   local remainder = tonumber(count)
