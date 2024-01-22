@@ -117,11 +117,6 @@ local commands = {
   ["refresh"] = function (params)
     return false
   end,
-  ["print"] = function (params)
-    if params[2] then
-      print(params[2])
-    end
-  end,
   ["exit"] = function (params)
     return true
   end,
@@ -151,7 +146,17 @@ local function loop()
   printColor("> ", colors.green, colors.black, false)
 
   local request = read(nil, {},
-    function(text) if string.len(text) > 0 then return complete.choice(text, autocomplete) else return { "" } end end)
+    function(text)
+      if string.len(text) <= 0 then return {""} end
+      local space = string.find(text," ") or 0
+      local autocompleteItems = {["count"] = true}
+      local section = string.sub(text,space+1)
+      if autocompleteItems[string.sub(text,0,space-1)] then
+        return complete.choice(section, autocomplete)
+      end
+      return complete.choice(text, autocomplete)
+    end)
+
   local args = splitWords(request, " ")
   if commands[args[1]] then
     return commands[args[1]](args,itemList)
