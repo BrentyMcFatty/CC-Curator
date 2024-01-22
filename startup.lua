@@ -20,6 +20,7 @@ end
 
 ---Taken and modified from the Archivist, generates an autocomplete friendly list of entries.
 ---@param list table
+---@param commands table
 ---@return table autocomplete
 local function genList(list,commands)
   local modnames = {}
@@ -102,7 +103,7 @@ local function slowWrite(text, rate)
   for n = 1, #wrapped_str,characters do
       sleep(to_sleep)
       if spk then
-        spk.playSound("create:scroll_value",0.5,3)
+        spk.playSound("create:scroll_value",0.3,3)
       end
       write(wrapped_str:sub(n, n+characters-1))
   end
@@ -137,11 +138,11 @@ end
 
 --#region commands
 local commands = {
-  ["refresh"] = function (params)
+  ["refresh"] = function ()
     printColor("> Refreshing index...", colors.red, colors.black, true)
     return false
   end,
-  ["exit"] = function (params)
+  ["exit"] = function ()
     printColor("> Exiting program...", colors.red, colors.black, true)
     return true
   end,
@@ -185,7 +186,6 @@ local commands = {
   ["help"] = function (params,list,commands)
     commands.commands(params,list,commands)
   end
-
 }
 --#endregion commands
 
@@ -235,6 +235,10 @@ end
 --#region end stuff
 term.clear()
 term.setCursorPos(1, 1)
+if spk then
+  spk.playSound("create:confirm",1,1)
+end
+sleep(0.5)
 printColor("> My name is the Curator V0.2, my job is to make sure you can interact with the Archivist's storage!", colors.red, colors.black, true)
 printColor("> If you don't know what to do, try using \"help\" or \"commands\"!", colors.red, colors.black, true)
 repeat
