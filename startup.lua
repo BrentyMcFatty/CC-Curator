@@ -1,8 +1,10 @@
 --#region Requires!
 local complete = require("cc.completion")
+local strings = require("cc.strings")
 local output = peripheral.find("modem").getNameLocal()
 ---@diagnostic disable-next-line: param-type-mismatch
 local input = peripheral.find("create:item_vault")
+local spk = peripheral.find("speaker")
 --#endregion
 
 --#region errors and stuff
@@ -87,13 +89,34 @@ local function extract(input,requests,output)
   return remainder
 end
 
+local function slowWrite(text, rate)
+  rate = rate or 20
+  if rate < 0 then
+      error("Rate must be positive", 2)
+  end
+  local to_sleep = 1 / rate
+  local characters = rate / 20
+  local wrapped_lines = strings.wrap(tostring(text), (term.getSize()))
+  local wrapped_str = table.concat(wrapped_lines, "\n")
+
+  for n = 1, #wrapped_str,characters do
+      sleep(to_sleep)
+      if spk then
+        spk.playSound("create:scroll_value",0.5,3)
+      end
+      write(wrapped_str:sub(n, n+characters-1))
+  end
+end
+
+
 local function printColor(text,color,bgcolor,nl)
   local oldText = term.getTextColor()
   local oldBg = term.getBackgroundColor()
   local newLine = nl and "\n" or ""
   term.setBackgroundColor(bgcolor)
   term.setTextColor(color)
-  io.write(text..newLine)
+  -- io.write(text..newLine)
+  slowWrite(text..newLine,180)
   term.setBackgroundColor(oldBg)
   term.setTextColor(oldText)
 end
@@ -115,9 +138,11 @@ end
 --#region commands
 local commands = {
   ["refresh"] = function (params)
+    printColor("> Refreshing index...", colors.red, colors.black, true)
     return false
   end,
   ["exit"] = function (params)
+    printColor("> Exiting program...", colors.red, colors.black, true)
     return true
   end,
   ["count"] = function (params,list)
@@ -126,15 +151,41 @@ local commands = {
     for key, value in pairs(result) do
       count = count + value.count
     end
-    print(count)
+    printColor("> I have found ", colors.red, colors.black, false)
+    printColor(count, colors.white, colors.black, false)
+    printColor(" items with that name.", colors.red, colors.black, true)
   end,
   ["total"] = function (params,list)
     local total = 0
     for key, value in pairs(list) do
       total = total + value.count
     end
-    print(total)
+    printColor("> This vault has ", colors.red, colors.black, false)
+    printColor(total, colors.white, colors.black, false)
+    printColor(" items in total!", colors.red, colors.black, true)
+  end,
+  ["select"] = function (params,list)
+    if not params[2] then return end
+    if not tonumber(params[2]) then return end
+    if tonumber(params[2]) > 16 then return end
+    if tonumber(params[2]) < 1 then return end
+    local slot = tonumber(params[2])
+    turtle.select(slot)
+    printColor("> Selected slot ", colors.red, colors.black, false)
+    printColor("#1", colors.white, colors.black, true)
+  end,
+  ["commands"] = function (params,list,commands)
+    printColor("> Available commands: ", colors.red, colors.black,true)
+    printColor("> ", colors.red, colors.black,false)
+    for key, value in pairs(commands) do
+      printColor(key..",", colors.red, colors.black, false)
+    end
+    print("")
+  end,
+  ["help"] = function (params,list,commands)
+    commands.commands(params,list,commands)
   end
+
 }
 --#endregion commands
 
@@ -159,28 +210,35 @@ local function loop()
 
   local args = splitWords(request, " ")
   if commands[args[1]] then
-    return commands[args[1]](args,itemList)
+    return commands[args[1]](args,itemList,commands)
   elseif args[1] and tonumber(args[2]) then
     local packet, remainder = searchItem(itemList, args[1], args[2])
+    local moved = args[2] - remainder
+    printColor("> Extracting ", colors.red, colors.black, false)
+    printColor(moved, colors.white, colors.black, false)
+    printColor(" item(s) from the vault!", colors.red, colors.black, true)
     extract(input, packet, output)
   else
     printColor("> Item count?", colors.red, colors.black, true)
-    printColor("> ", colors.green, colors.black, false)
+    printColor("#> ", colors.green, colors.black, false)
     local count = tonumber(read()) or 64
     local packet, remainder = searchItem(itemList, args[1],count)
+    local moved = count - remainder
+    printColor("> Extracting ", colors.red, colors.black, false)
+    printColor(moved, colors.white, colors.black, false)
+    printColor(" item(s) from the vault!", colors.red, colors.black, true)
     extract(input, packet, output)
   end
 end
 
 
 --#region end stuff
-printColor("> My name is the Curator V0.1, my job is to make sure you can interact with the Archivist's storage!", colors.red, colors.black, true)
+term.clear()
+term.setCursorPos(1, 1)
+printColor("> My name is the Curator V0.2, my job is to make sure you can interact with the Archivist's storage!", colors.red, colors.black, true)
+printColor("> If you don't know what to do, try using \"help\" or \"commands\"!", colors.red, colors.black, true)
 repeat
   local exit = loop()
 until exit == true
 
-
-term.setTextColor(colors.red)
-textutils.slowPrint("> Exiting...")
-term.setTextColor(colors.white)
 --#endregion
