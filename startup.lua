@@ -82,7 +82,7 @@ end
 ---@param requests table the requests to process
 ---@param output string the inventory to extract to
 ---@return number remainder the remaining items that were not transferred for whatever reason(IE not enough items in inventory or output full)
-local function extract(input,requests,output)
+local function extract(input,requests,output,blit)
   local remainder = 0
   for key, request in pairs(requests) do
     remainder = request.count - input.pushItems(output,request.slotid,request.count)
@@ -97,15 +97,14 @@ local function slowWrite(text, rate)
   end
   local to_sleep = 1 / rate
   local characters = rate / 20
-  local wrapped_lines = strings.wrap(tostring(text), (term.getSize()))
-  local wrapped_str = table.concat(wrapped_lines, "\n")
+  local text = tostring(text)
 
-  for n = 1, #wrapped_str,characters do
+  for n = 1, #text,characters do
       sleep(to_sleep)
       if spk then
         spk.playSound("create:scroll_value",0.3,3)
       end
-      write(wrapped_str:sub(n, n+characters-1))
+      write(text:sub(n, n+characters-1))
   end
 end
 
@@ -178,13 +177,30 @@ local commands = {
   ["commands"] = function (params,list,commands)
     printColor("> Available commands: ", colors.red, colors.black,true)
     printColor("> ", colors.red, colors.black,false)
+    local commandNames = {}
     for key, value in pairs(commands) do
-      printColor(key..",", colors.red, colors.black, false)
+      commandNames[#commandNames+1] = key
     end
-    print("")
+    printColor(table.concat(commandNames, ", "), colors.white, colors.black,true)
   end,
   ["help"] = function (params,list,commands)
     commands.commands(params,list,commands)
+  end,
+  ["clear"] = function (params,list,commands)
+    term.clear()
+    term.setCursorPos(1, 1)
+  end,
+  ["deposit"] = function (params,list,commands)
+    if not params[2] then return end
+    if not tonumber(params[2]) then return end
+    if tonumber(params[2]) > 16 then return end
+    if tonumber(params[2]) < 1 then return end
+    local slot = tonumber(params[2])
+    turtle.select(slot)
+    local count = input.pullItems(output,slot)
+    printColor("> ", colors.red, colors.black,false)
+    printColor(count, colors.white, colors.black,false)
+    printColor(" item(s) have been deposited!", colors.red, colors.black,true)
   end
 }
 --#endregion commands
@@ -239,8 +255,15 @@ if spk then
   spk.playSound("create:confirm",1,1)
 end
 sleep(0.5)
-printColor("> My name is the Curator V0.2, my job is to make sure you can interact with the Archivist's storage!", colors.red, colors.black, true)
-printColor("> If you don't know what to do, try using \"help\" or \"commands\"!", colors.red, colors.black, true)
+printColor("> My name is the Curator ", colors.red, colors.black, false)
+printColor("V0.2.5", colors.white, colors.black, false)
+printColor(", my job is to make sure you can interact with the Archivist's storage!", colors.red, colors.black, true)
+
+printColor("> If you don't know what to do, try using ", colors.red, colors.black, false)
+printColor("\"help\"", colors.white, colors.black, false)
+printColor(" or ", colors.red, colors.black, false)
+printColor("\"commands\"", colors.white, colors.black, false)
+printColor("!", colors.red, colors.black, true)
 repeat
   local exit = loop()
 until exit == true
