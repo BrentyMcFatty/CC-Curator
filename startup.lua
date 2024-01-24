@@ -1,17 +1,28 @@
+--#region Requires!
 local complete = require("cc.completion")
-local output = peripheral.call("bottom","getNameLocal")
+local strings = require("cc.strings")
+local output = peripheral.find("modem").getNameLocal()
 ---@diagnostic disable-next-line: param-type-mismatch
 local input = peripheral.find("create:item_vault")
+local spk = peripheral.find("speaker")
+--#endregion
 
-if not input then
-  error("No inventory detected...",2)
+--#region errors and stuff
+if not output then
+  error("No output detected, this either means there is no modem present or the modem is not active.",0)
 end
-term.clear()
-term.setCursorPos(1, 1)
+if not input then
+  error("No vault detected, are you sure there is one nearby?",0)
+end
+--#endregion
+
+--#region functions
+
 ---Taken and modified from the Archivist, generates an autocomplete friendly list of entries.
 ---@param list table
+---@param commands table
 ---@return table autocomplete
-local function genList(list)
+local function genList(list,commands)
   local modnames = {}
   local modhash = {}
   local result = {}
@@ -36,7 +47,9 @@ local function genList(list)
   for i, v in pairs(items) do
     result[#result + 1] = v
   end
-
+  for v,_ in pairs(commands) do
+    table.insert(result, v)
+  end
   return result
 end
 
@@ -77,63 +90,159 @@ local function extract(input,requests,output)
   return remainder
 end
 
+local function slowWrite(text, rate)
+  rate = rate or 20
+  if rate < 0 then
+      error("Rate must be positive", 2)
+  end
+  local to_sleep = 1 / rate
+  local characters = rate / 20
+  local wrapped_lines = strings.wrap(tostring(text), (term.getSize()))
+  local wrapped_str = table.concat(wrapped_lines, "\n")
+
+  for n = 1, #wrapped_str,characters do
+      sleep(to_sleep)
+      if spk then
+        spk.playSound("create:scroll_value",0.3,3)
+      end
+      write(wrapped_str:sub(n, n+characters-1))
+  end
+end
+
+
 local function printColor(text,color,bgcolor,nl)
   local oldText = term.getTextColor()
   local oldBg = term.getBackgroundColor()
   local newLine = nl and "\n" or ""
   term.setBackgroundColor(bgcolor)
   term.setTextColor(color)
-  io.write(text..newLine)
+  -- io.write(text..newLine)
+  slowWrite(text..newLine,180)
   term.setBackgroundColor(oldBg)
   term.setTextColor(oldText)
 end
 
-local function loop()
-  local list = input.list()
-  local autocomplete = genList(list)
-  autocomplete[#autocomplete+1] = "refresh"
-  autocomplete[#autocomplete+1] = "exit"
-  printColor("> Command/Item name?", colors.red, colors.black, true)
-  printColor("> ", colors.green, colors.black, false)
-  local search = read(nil, nil, function(text) if string.len(text) > 0 then return complete.choice(text, autocomplete) else return {""} end end)
-  if search == "refresh" then
-    printColor("> Refreshing index...", colors.red, colors.black, true)
-    sleep(0.5)
-    return
-  elseif search == "exit" then
-    return true
+---Helper function, splits an input into its constituent words
+---@param text string
+---@param char string
+---@return table result 
+local function splitWords(text,char)
+  local result = {}
+  for k,v in string.gmatch(text,"([^"..char.."]+)") do
+    result[#result+1] = k
   end
-  local count
-  repeat
-    printColor("> How many?", colors.red, colors.black, true)
-    printColor("> ", colors.green, colors.black, false)
-    count = read()
-  until tonumber(count)
-
-  local packet, remainder = searchItem(list, search, count)
-
-  local found = count - remainder
-
-  if #packet <= 0 then
-    printColor("> Sorry, couldn't find that...", colors.red, colors.black, true)
-    return
-  end
-  extract(input, packet, output)
-  if remainder > 0 then
-    printColor("> Extracting... I could only find: " .. found, colors.red, colors.black, true)
-  else
-    printColor("> Extracting items.", colors.red, colors.black, true)
-  end
-  sleep(0.1)
+  return result
 end
 
-printColor("> My name is the Curator V0.1, my job is to make sure you can interact with the Archivist's storage!", colors.red, colors.black, true)
+--#endregion
 
+--#region commands
+local commands = {
+  ["refresh"] = function ()
+    printColor("> Refreshing index...", colors.red, colors.black, true)
+    return false
+  end,
+  ["exit"] = function ()
+    printColor("> Exiting program...", colors.red, colors.black, true)
+    return true
+  end,
+  ["count"] = function (params,list)
+    local count = 0
+    local result = searchItem(list, params[2],math.huge)
+    for key, value in pairs(result) do
+      count = count + value.count
+    end
+    printColor("> I have found ", colors.red, colors.black, false)
+    printColor(count, colors.white, colors.black, false)
+    printColor(" items with that name.", colors.red, colors.black, true)
+  end,
+  ["total"] = function (params,list)
+    local total = 0
+    for key, value in pairs(list) do
+      total = total + value.count
+    end
+    printColor("> This vault has ", colors.red, colors.black, false)
+    printColor(total, colors.white, colors.black, false)
+    printColor(" items in total!", colors.red, colors.black, true)
+  end,
+  ["select"] = function (params,list)
+    if not params[2] then return end
+    if not tonumber(params[2]) then return end
+    if tonumber(params[2]) > 16 then return end
+    if tonumber(params[2]) < 1 then return end
+    local slot = tonumber(params[2])
+    turtle.select(slot)
+    printColor("> Selected slot ", colors.red, colors.black, false)
+    printColor("#1", colors.white, colors.black, true)
+  end,
+  ["commands"] = function (params,list,commands)
+    printColor("> Available commands: ", colors.red, colors.black,true)
+    printColor("> ", colors.red, colors.black,false)
+    for key, value in pairs(commands) do
+      printColor(key..",", colors.red, colors.black, false)
+    end
+    print("")
+  end,
+  ["help"] = function (params,list,commands)
+    commands.commands(params,list,commands)
+  end
+}
+--#endregion commands
+
+local function loop()
+  local itemList = input.list()
+  local autocomplete = genList(itemList, commands)
+
+  printColor("> Command/Item name?", colors.red, colors.black, true)
+  printColor("> ", colors.green, colors.black, false)
+
+  local request = read(nil, {},
+    function(text)
+      if string.len(text) <= 0 then return {""} end
+      local space = string.find(text," ") or 0
+      local autocompleteItems = {["count"] = true}
+      local section = string.sub(text,space+1)
+      if autocompleteItems[string.sub(text,0,space-1)] then
+        return complete.choice(section, autocomplete)
+      end
+      return complete.choice(text, autocomplete)
+    end)
+
+  local args = splitWords(request, " ")
+  if commands[args[1]] then
+    return commands[args[1]](args,itemList,commands)
+  elseif args[1] and tonumber(args[2]) then
+    local packet, remainder = searchItem(itemList, args[1], args[2])
+    local moved = args[2] - remainder
+    printColor("> Extracting ", colors.red, colors.black, false)
+    printColor(moved, colors.white, colors.black, false)
+    printColor(" item(s) from the vault!", colors.red, colors.black, true)
+    extract(input, packet, output)
+  else
+    printColor("> Item count?", colors.red, colors.black, true)
+    printColor("#> ", colors.green, colors.black, false)
+    local count = tonumber(read()) or 64
+    local packet, remainder = searchItem(itemList, args[1],count)
+    local moved = count - remainder
+    printColor("> Extracting ", colors.red, colors.black, false)
+    printColor(moved, colors.white, colors.black, false)
+    printColor(" item(s) from the vault!", colors.red, colors.black, true)
+    extract(input, packet, output)
+  end
+end
+
+
+--#region end stuff
+term.clear()
+term.setCursorPos(1, 1)
+if spk then
+  spk.playSound("create:confirm",1,1)
+end
+sleep(0.5)
+printColor("> My name is the Curator V0.2, my job is to make sure you can interact with the Archivist's storage!", colors.red, colors.black, true)
+printColor("> If you don't know what to do, try using \"help\" or \"commands\"!", colors.red, colors.black, true)
 repeat
   local exit = loop()
 until exit == true
 
-
-term.setTextColor(colors.red)
-textutils.slowPrint("> Exiting...")
-term.setTextColor(colors.white)
+--#endregion
