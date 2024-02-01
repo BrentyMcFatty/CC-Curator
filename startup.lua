@@ -1,10 +1,14 @@
---#region Requires!
+--#region Initialization stuffs...
 local complete = require("cc.completion")
 local strings = require("cc.strings")
 local output = peripheral.find("modem").getNameLocal()
 ---@diagnostic disable-next-line: param-type-mismatch
 local input = peripheral.find("create:item_vault")
 local spk = peripheral.find("speaker")
+local history = {}
+--The length of the terminal history that you can scroll through.
+local historyLen = 10
+local version = "0.2.6"
 --#endregion
 
 --#region errors and stuff
@@ -15,6 +19,15 @@ if not input then
   error("No vault detected, are you sure there is one nearby?",0)
 end
 --#endregion
+
+--Initialise the history setting on first boot, otherwise read the existing history
+if not settings.get("curator_history") then
+  settings.define("curator_history", {description="The curator's terminal history.",type="table",default={}})
+else
+  history = settings.get("curator_history")
+end
+
+
 
 --#region functions
 
@@ -116,7 +129,7 @@ local function printColor(text,color,bgcolor,nl)
   term.setBackgroundColor(bgcolor)
   term.setTextColor(color)
   -- io.write(text..newLine)
-  slowWrite(text..newLine,180)
+  slowWrite(text..newLine,250)
   term.setBackgroundColor(oldBg)
   term.setTextColor(oldText)
 end
@@ -139,7 +152,6 @@ end
 local commands = {
   ["refresh"] = function ()
     printColor("> Refreshing index...", colors.red, colors.black, true)
-    return false
   end,
   ["exit"] = function ()
     printColor("> Exiting program...", colors.red, colors.black, true)
@@ -201,6 +213,11 @@ local commands = {
     printColor("> ", colors.red, colors.black,false)
     printColor(count, colors.white, colors.black,false)
     printColor(" item(s) have been deposited!", colors.red, colors.black,true)
+  end,
+  ["forget"] = function (params,list,commands)
+    history = {}
+    settings.set("curator_history", {})
+    settings.save()
   end
 }
 --#endregion commands
@@ -212,9 +229,9 @@ local function loop()
   printColor("> Command/Item name?", colors.red, colors.black, true)
   printColor("> ", colors.green, colors.black, false)
 
-  local request = read(nil, {},
-    function(text)
-      if string.len(text) <= 0 then return {""} end
+  local request = read(nil, history
+  ,function(text)
+      if string.len(text) <= 0 then return end
       local space = string.find(text," ") or 0
       local autocompleteItems = {["count"] = true}
       local section = string.sub(text,space+1)
@@ -222,10 +239,17 @@ local function loop()
         return complete.choice(section, autocomplete)
       end
       return complete.choice(text, autocomplete)
-    end)
+    end
+  )
 
   local args = splitWords(request, " ")
   if commands[args[1]] then
+    table.insert(history,request)
+    if #history > historyLen then
+      table.remove(history, 1)
+    end
+    settings.set("curator_history", history)
+    settings.save()
     return commands[args[1]](args,itemList,commands)
   elseif args[1] and tonumber(args[2]) then
     local packet, remainder = searchItem(itemList, args[1], args[2])
@@ -256,7 +280,7 @@ if spk then
 end
 sleep(0.5)
 printColor("> My name is the Curator ", colors.red, colors.black, false)
-printColor("V0.2.5", colors.white, colors.black, false)
+printColor("V"..version, colors.white, colors.black, false)
 printColor(", my job is to make sure you can interact with the Archivist's storage!", colors.red, colors.black, true)
 
 printColor("> If you don't know what to do, try using ", colors.red, colors.black, false)
