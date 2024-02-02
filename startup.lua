@@ -8,7 +8,7 @@ local spk = peripheral.find("speaker")
 local history = {}
 --The length of the terminal history that you can scroll through.
 local historyLen = 10
-local version = "0.2.6"
+local version = "0.2.8"
 --#endregion
 
 --#region errors and stuff
@@ -168,13 +168,19 @@ local commands = {
     printColor(" items with that name.", colors.red, colors.black, true)
   end,
   ["total"] = function (params,list)
+    local slots = input.size() * 64
     local total = 0
     for key, value in pairs(list) do
       total = total + value.count
     end
+
+    local percent = math.floor(((total/slots)*100)+0.5)
     printColor("> This vault has ", colors.red, colors.black, false)
     printColor(total, colors.white, colors.black, false)
     printColor(" items in total!", colors.red, colors.black, true)
+    printColor("> Approximately ", colors.red, colors.black, false)
+    printColor(percent.."%", colors.white, colors.black, false)
+    printColor(" of the vault!", colors.red, colors.black, true)
   end,
   ["select"] = function (params,list)
     if not params[2] then return end
@@ -218,7 +224,19 @@ local commands = {
     history = {}
     settings.set("curator_history", {})
     settings.save()
-  end
+  end,
+  ["dump"] = function (params,list,commands)
+    local count = 0
+    for i = 1, 16 do
+      count = count + input.pullItems(output,i)
+    end
+    printColor("> ", colors.red, colors.black,false)
+    printColor(count, colors.white, colors.black,false)
+    printColor(" item(s) have been dumped!", colors.red, colors.black,true)
+  end,
+  ["lua"] = function (params,list,commands)
+    shell.run("lua")
+  end,
 }
 --#endregion commands
 
@@ -255,7 +273,7 @@ local function loop()
     local packet, remainder = searchItem(itemList, args[1], args[2])
     local moved = args[2] - remainder
     printColor("> Extracting ", colors.red, colors.black, false)
-    printColor(moved, colors.white, colors.black, false)
+    printColor(" "..moved, colors.white, colors.black, false)
     printColor(" item(s) from the vault!", colors.red, colors.black, true)
     extract(input, packet, output)
   else
@@ -265,7 +283,7 @@ local function loop()
     local packet, remainder = searchItem(itemList, args[1],count)
     local moved = count - remainder
     printColor("> Extracting ", colors.red, colors.black, false)
-    printColor(moved, colors.white, colors.black, false)
+    printColor(" "..moved, colors.white, colors.black, false)
     printColor(" item(s) from the vault!", colors.red, colors.black, true)
     extract(input, packet, output)
   end
