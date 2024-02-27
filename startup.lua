@@ -63,8 +63,6 @@ local function genList(list,commands)
   for i, v in pairs(items) do
     result[#result + 1] = v
   end
-  
-
   for v,_ in pairs(commands) do
     table.insert(result, v)
   end
@@ -108,35 +106,97 @@ local function extract(input,requests,output,blit)
   return remainder
 end
 
-local function slowWrite(text, rate)
-  rate = rate or 20
-  if rate < 0 then
-      error("Rate must be positive", 2)
-  end
-  local to_sleep = 1 / rate
-  local characters = rate / 20
-  local text = tostring(text)
 
-  for n = 1, #text,characters do
-      sleep(to_sleep)
-      if spk then
-        spk.playSound("create:scroll_value",0.3,3)
-      end
-      write(text:sub(n, n+characters-1))
+---Prints in fancy colors using codes!
+---@param str string string containing control codes, &[0-9a-f] for foreground color, and &&[0-9a-f] for background.
+---@param nl boolean? whether to insert a newline at the end
+---|true
+---|false
+---@param ... unknown? passthrough for string.format, any format variables in the string can be references here.
+local function printColor(str,nl,...)
+  local indices = {}
+  local fstr = str:format(...)
+
+  --#region control code findery:tm:
+  local startIndex = 1
+  while true do
+    local start, finish, codeType
+    local doubleCodeStart, doubleCodeFinish = fstr:find("&&[0-9a-f]", startIndex)
+    local singleCodeStart, singleCodeFinish = fstr:find("&[0-9a-f]", startIndex)
+
+    if doubleCodeStart and (not singleCodeStart or doubleCodeStart < singleCodeStart) then
+        start, finish, codeType = doubleCodeStart, doubleCodeFinish, "bg"
+    elseif singleCodeStart then
+        start, finish, codeType = singleCodeStart, singleCodeFinish, "fg"
+    else
+        break
+    end
+
+    -- Add new code
+    indices[#indices + 1] = {index = start, code = {codeType, fstr:sub(finish, finish)}}
+
+    -- Remove the current color code from the string
+    fstr = fstr:sub(1, start - 1) .. fstr:sub(finish + 1)
+    startIndex = start
   end
+  --#endregion
+
+  --#region Splitting the string by control codes :3
+    local stringTable = {}
+    if #indices > 0 then
+      if indices[1].index >1 then
+        local index = #stringTable+1
+        stringTable[index] = {}
+        stringTable[index].str = fstr:sub(1,indices[1].index-1)
+      end
+      for key, value in pairs(indices) do
+        local stringEnd = indices[key+1] and indices[key+1].index-1 or #fstr
+        local index = #stringTable+1
+        stringTable[index] = {}
+        stringTable[index].str = fstr:sub(value.index,stringEnd)
+        stringTable[index].code = value.code
+      end
+    else
+      stringTable[1] = {["str"] = fstr}
+    end
+  --#endregion
+  for key, value in pairs(stringTable) do
+    if value.code then
+      if value.code[1] == "bg" then
+        term.setBackgroundColor(2^tonumber("0x"..value.code[2]))
+      elseif value.code[1] == "fg" then
+        term.setTextColor(2^tonumber("0x"..value.code[2]))
+      end
+    end
+    write(value.str)
+  end
+  if nl then print() end
 end
 
+local function slowWrite(text,rate,length,nl)
+  
+  local wrapped = strings.wrap(text,term.getSize())
 
-local function printColor(text,color,bgcolor,nl)
-  local oldText = term.getTextColor()
-  local oldBg = term.getBackgroundColor()
-  local newLine = nl and "\n" or ""
-  term.setBackgroundColor(bgcolor)
-  term.setTextColor(color)
-  -- io.write(text..newLine)
-  slowWrite(text..newLine,250)
-  term.setBackgroundColor(oldBg)
-  term.setTextColor(oldText)
+  for key, lines in pairs(wrapped) do
+    local segments = {}
+    local startSegment = 1
+    while true do
+      local segment = lines:sub(startSegment,startSegment+length-1)
+      if segment:sub(#segment,#segment) == "&" then
+        segment = lines:sub(startSegment,startSegment+length+1)
+      end
+      segments[#segments+1] = segment
+      if (startSegment+length) > #lines then break end
+      startSegment = startSegment + #segment
+    end
+    for _, strs in pairs(segments) do
+      printColor(strs, false)
+      if spk then spk.playSound("create:scroll_value",0.3,3) end
+      sleep(rate)
+    end
+    if key ~= #wrapped then print() end
+  end
+  if nl then print() end
 end
 
 ---Helper function, splits an input into its constituent words
@@ -157,6 +217,7 @@ local function addHistory(history,item,historyLen)
   end
   local history = history or {}
   local historyLen = historyLen or 10
+  if history[#history] == item then return end
   table.insert(history,item)
   if #history > historyLen then
     table.remove(history, 1)
@@ -165,16 +226,22 @@ local function addHistory(history,item,historyLen)
   settings.save()
 end
 
+local function contains(table,element)
+  for key, value in pairs(table) do
+    if value == element then return true end
+  end
+  return false
+end
 
 --#endregion
 
 --#region commands
 local commands = {
   ["refresh"] = function ()
-    printColor("> Refreshing index...", colors.red, colors.black, true)
+    slowWrite("&e> Refreshing index...", 0.025, 10,true)
   end,
   ["exit"] = function ()
-    printColor("> Exiting program...", colors.red, colors.black, true)
+    slowWrite("&e> Exiting program...", 0.025, 1,true)
     return true
   end,
   ["count"] = function (params,list)
@@ -183,9 +250,7 @@ local commands = {
     for key, value in pairs(result) do
       count = count + value.count
     end
-    printColor("> I have found ", colors.red, colors.black, false)
-    printColor(count, colors.white, colors.black, false)
-    printColor(" items with that name.", colors.red, colors.black, true)
+    slowWrite("&e> I have found &0"..count.."&e items with that name", 0.025, 10,true)
   end,
   ["total"] = function (params,list)
     local slots = input.size() * 64
@@ -195,31 +260,26 @@ local commands = {
     end
 
     local percent = math.floor(((total/slots)*100)+0.5)
-    printColor("> This vault has ", colors.red, colors.black, false)
-    printColor(total, colors.white, colors.black, false)
-    printColor(" items in total!", colors.red, colors.black, true)
-    printColor("> Approximately ", colors.red, colors.black, false)
-    printColor(percent.."%", colors.white, colors.black, false)
-    printColor(" of the vault!", colors.red, colors.black, true)
+    slowWrite("&e> This vault has &0"..total.." items in total!", 0.025, 10,true)
+    slowWrite("&e> Approximately &0"..percent.."%% &eitems in total!", 0.025, 10,true)
   end,
   ["select"] = function (params,list)
     if not params[2] then return end
     if not tonumber(params[2]) then return end
     if tonumber(params[2]) > 16 then return end
     if tonumber(params[2]) < 1 then return end
-    local slot = tonumber(params[2])
+    local slot = tonumber(params[2]) or 1
     turtle.select(slot)
-    printColor("> Selected slot ", colors.red, colors.black, false)
-    printColor("#1", colors.white, colors.black, true)
+    slowWrite("&e> Selected slot &0".."#"..slot, 0.025, 10,true)
   end,
   ["commands"] = function (params,list,commands)
-    printColor("> Available commands: ", colors.red, colors.black,true)
-    printColor("> ", colors.red, colors.black,false)
+    slowWrite("&e> Available commands:", 0.025, 10,true)
+    slowWrite("&e> ", 0.025, 10,false)
     local commandNames = {}
     for key, value in pairs(commands) do
       commandNames[#commandNames+1] = key
     end
-    printColor(table.concat(commandNames, ", "), colors.white, colors.black,true)
+    slowWrite("&0"..table.concat(commandNames, ", "), 0.025, 10,true)
   end,
   ["help"] = function (params,list,commands)
     commands.commands(params,list,commands)
@@ -236,9 +296,7 @@ local commands = {
     end
     local slot = tonumber(params[2]) or turtle.getSelectedSlot()
     local count = input.pullItems(output,slot)
-    printColor("> ", colors.red, colors.black,false)
-    printColor(count, colors.white, colors.black,false)
-    printColor(" item(s) have been deposited!", colors.red, colors.black,true)
+    slowWrite("&e> &0"..count.."&e item(s) have been deposited!", 0.025, 10,true)
   end,
   ["forget"] = function (params,list,commands)
     history = {}
@@ -250,12 +308,15 @@ local commands = {
     for i = 1, 16 do
       count = count + input.pullItems(output,i)
     end
-    printColor("> ", colors.red, colors.black,false)
-    printColor(count, colors.white, colors.black,false)
-    printColor(" item(s) have been dumped!", colors.red, colors.black,true)
+    slowWrite("&e> &0"..count.." item(s) have been dumped!", 0.025, 10,true)
   end,
   ["lua"] = function (params,list,commands)
     shell.run("lua")
+  end,
+  ["history"] = function (params,list,commands)
+    slowWrite("&e> Terminal history:", 0.025, 10,true)
+    slowWrite("&e> ", 0.025, 10,false)
+    slowWrite("&0"..table.concat(history, ", "), 0.025, 10,true)
   end,
 }
 --#endregion commands
@@ -263,20 +324,19 @@ local commands = {
 local function loop()
   local itemList = input.list()
   local autocomplete = genList(itemList, commands)
-
-  printColor("> Command/Item name?", colors.red, colors.black, true)
-  printColor("> ", colors.green, colors.black, false)
+  slowWrite("&e> Command/Item name?",0.025, 5,true)
+  slowWrite("&d> &0", 0.025, 3)
 
   local request = read(nil, history
   ,function(text)
-      if string.len(text) <= 0 then return end
+      if string.len(text) <= 0 then return {} end
       local space = string.find(text," ") or 0
       local autocompleteItems = {["count"] = true}
       local section = string.sub(text,space+1)
       if autocompleteItems[string.sub(text,0,space-1)] then
-        return complete.choice(section, autocomplete)
+        return complete.choice(section, autocomplete) or {}
       end
-      return complete.choice(text, autocomplete)
+      return complete.choice(text, autocomplete) or {}
     end
   )
 
@@ -287,24 +347,29 @@ local function loop()
     addHistory(history, request, historyLen)
     return commands[args[1]](args,itemList,commands)
   elseif args[1] and tonumber(args[2]) then
+    
     local packet, remainder = searchItem(itemList, args[1], args[2])
     addHistory(history, request, historyLen)
     local moved = args[2] - remainder
-    printColor("> Extracting ", colors.red, colors.black, false)
-    printColor(" "..moved, colors.white, colors.black, false)
-    printColor(" item(s) from the vault!", colors.red, colors.black, true)
+    slowWrite("&e> Extracting &0"..moved.."&e item(s) from the vault!", 0.025, 10,true)
+    extract(input, packet, output)
+
+  elseif contains(autocomplete, args[1]) then
+    slowWrite("&e> Item count? \"cancel\" to cancel", 0.025, 10,true)
+    slowWrite("&d#> &0", 0.025, 10,false)
+    local userInput = read(nil,nil,function (text)
+      if #text <= 0 then return {""} end
+      return complete.choice(text,{"cancel",""}) or {""}
+    end)
+    if userInput == "cancel" or (not tonumber(userInput)) then return end
+    local count = tonumber(userInput)
+    addHistory(history, tostring(request.." "..count), historyLen)
+    local packet, remainder = searchItem(itemList, args[1],count or 0)
+    local moved = count - remainder
+    slowWrite("&e> Extracting &0"..moved.."&e item(s) from the vault!", 0.025, 10,true)
     extract(input, packet, output)
   else
-    addHistory(history, request, historyLen)
-    printColor("> Item count?", colors.red, colors.black, true)
-    printColor("#> ", colors.green, colors.black, false)
-    local count = tonumber(read()) or 64
-    local packet, remainder = searchItem(itemList, args[1],count)
-    local moved = count - remainder
-    printColor("> Extracting ", colors.red, colors.black, false)
-    printColor(" "..moved, colors.white, colors.black, false)
-    printColor(" item(s) from the vault!", colors.red, colors.black, true)
-    extract(input, packet, output)
+    slowWrite("&e> No such item",0.025, 3,true)
   end
 end
 
@@ -316,16 +381,11 @@ if spk then
   spk.playSound("create:confirm",1,1)
 end
 sleep(0.5)
-printColor("> My name is the Curator ", colors.red, colors.black, false)
-printColor("V"..version, colors.white, colors.black, false)
-printColor(", my job is to make sure you can interact with the Archivist's storage!", colors.red, colors.black, true)
 
-printColor("> If you don't know what to do, try using ", colors.red, colors.black, false)
-printColor("\"help\"", colors.white, colors.black, false)
-printColor(" or ", colors.red, colors.black, false)
-printColor("\"commands\"", colors.white, colors.black, false)
-printColor("!", colors.red, colors.black, true)
+slowWrite("&e> My name is the Curator &0V"..version.."&e!", 0.025, 15,true)
+slowWrite("&e> My job is to make sure you can interact with the Archivist's storage!", 0.025, 15,true)
 
+slowWrite("&e> If you don't know what to do, try using &0\"help\" &eor &0\"commands\"&e!", 0.025, 15,true)
 
 repeat
   local exit = loop()
