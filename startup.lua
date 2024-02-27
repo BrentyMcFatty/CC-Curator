@@ -2,7 +2,6 @@
 local complete = require("cc.completion")
 local strings = require("cc.strings")
 local output = peripheral.find("modem").getNameLocal()
----@diagnostic disable-next-line: param-type-mismatch
 local input = peripheral.find("create:item_vault")
 local spk = peripheral.find("speaker")
 local history = {}
@@ -57,9 +56,15 @@ local function genList(list,commands)
     end
   end
 
+  table.sort(items, function(a, b)
+    return #a < #b
+  end)
+  
   for i, v in pairs(items) do
     result[#result + 1] = v
   end
+  
+
   for v,_ in pairs(commands) do
     table.insert(result, v)
   end
@@ -146,6 +151,21 @@ local function splitWords(text,char)
   return result
 end
 
+local function addHistory(history,item,historyLen)
+  if (not history) or (not item) then
+    error("Incorrect usage")
+  end
+  local history = history or {}
+  local historyLen = historyLen or 10
+  table.insert(history,item)
+  if #history > historyLen then
+    table.remove(history, 1)
+  end
+  settings.set("curator_history", history)
+  settings.save()
+end
+
+
 --#endregion
 
 --#region commands
@@ -209,12 +229,12 @@ local commands = {
     term.setCursorPos(1, 1)
   end,
   ["deposit"] = function (params,list,commands)
-    if not params[2] then return end
-    if not tonumber(params[2]) then return end
-    if tonumber(params[2]) > 16 then return end
-    if tonumber(params[2]) < 1 then return end
-    local slot = tonumber(params[2])
-    turtle.select(slot)
+    if params[2] then
+      if not tonumber(params[2]) then return end
+      if tonumber(params[2]) > 16 then return end
+      if tonumber(params[2]) < 1 then return end
+    end
+    local slot = tonumber(params[2]) or turtle.getSelectedSlot()
     local count = input.pullItems(output,slot)
     printColor("> ", colors.red, colors.black,false)
     printColor(count, colors.white, colors.black,false)
@@ -260,23 +280,22 @@ local function loop()
     end
   )
 
+  if (request == "") or (not request) then return end
+
   local args = splitWords(request, " ")
   if commands[args[1]] then
-    table.insert(history,request)
-    if #history > historyLen then
-      table.remove(history, 1)
-    end
-    settings.set("curator_history", history)
-    settings.save()
+    addHistory(history, request, historyLen)
     return commands[args[1]](args,itemList,commands)
   elseif args[1] and tonumber(args[2]) then
     local packet, remainder = searchItem(itemList, args[1], args[2])
+    addHistory(history, request, historyLen)
     local moved = args[2] - remainder
     printColor("> Extracting ", colors.red, colors.black, false)
     printColor(" "..moved, colors.white, colors.black, false)
     printColor(" item(s) from the vault!", colors.red, colors.black, true)
     extract(input, packet, output)
   else
+    addHistory(history, request, historyLen)
     printColor("> Item count?", colors.red, colors.black, true)
     printColor("#> ", colors.green, colors.black, false)
     local count = tonumber(read()) or 64
@@ -306,6 +325,8 @@ printColor("\"help\"", colors.white, colors.black, false)
 printColor(" or ", colors.red, colors.black, false)
 printColor("\"commands\"", colors.white, colors.black, false)
 printColor("!", colors.red, colors.black, true)
+
+
 repeat
   local exit = loop()
 until exit == true
