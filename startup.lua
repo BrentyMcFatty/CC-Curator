@@ -493,10 +493,6 @@ local function loop()
       if commands[firstElement] and commands[firstElement]["autocomplete"] then
         return complete.choice(section, commands[firstElement]["autocomplete"](commands,itemListAutocomplete)) or {}
       end
-      if (#complete.choice(firstElement, getCommandList(commands)) > 0) and (#firstElement >= 3) and (space ~= 0) then
-        local completeCommand = firstElement..complete.choice(firstElement, getCommandList(commands))[1]
-        return complete.choice(section, commands[completeCommand]["autocomplete"](commands,itemListAutocomplete)) or {}
-      end
       local fullautocomplete = {}
       for k,v in pairs(commands) do
         table.insert(fullautocomplete, k)
@@ -548,10 +544,6 @@ local function loop()
 
     slowWrite("&e> Extracting &0"..moved.."&e item(s) from the vault!", 0.025, 10,true)
     extract(input, packet, output)
-  elseif (#complete.choice(args[1], getCommandList(commands)) > 0) and (#args[1] >= 3) then
-    local comm = args[1]..complete.choice(args[1], getCommandList(commands))[1]
-    addHistory(history, comm, historyLen)
-    return commands[comm]["function"](commands,args,itemList)
   else
     slowWrite("&e> Unknown command or item name",0.025, 10,true)
   end
