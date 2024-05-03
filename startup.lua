@@ -19,7 +19,7 @@ local ratu = require("RATU")
 local history = {}
 --The length of the terminal history that you can scroll through.
 local historyLen = 10
-local version = "0.4.0"
+local version = "0.4.1"
 --#endregion
 
 --#region errors and stuff
@@ -456,7 +456,10 @@ local commands = {
       settings.set("curatorCrashed", true)
       settings.save()
       term.setPaletteColor(colors.black, 0x040480)
-      spk.playSound("watching:event.crash",0.5,0.7)
+      if spk then
+        ---@diagnostic disable-next-line: undefined-field
+        spk.playSound("watching:event.crash",0.5,0.7)
+      end
       sleep(2)
       os.reboot()
     end,

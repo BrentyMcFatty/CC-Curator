@@ -1,7 +1,11 @@
 {
   "Lua.workspace.library": [
-    "C:/Users/Razvii/AppData/Roaming/Code/User/globalStorage/sumneko.lua/addonManager/addons/cc-tweaked/module/library"
+    "/home/razvii/.config/Code/User/globalStorage/sumneko.lua/addonManager/addons/cc-tweaked/module/library"
   ],
   "Lua.runtime.version": "Lua 5.3",
-  "Lua.workspace.checkThirdParty": false
+  "Lua.workspace.checkThirdParty": false,
+  "Lua.runtime.builtin": {
+    "io": "disable",
+    "os": "disable"
+  }
 }
