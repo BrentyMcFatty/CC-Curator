@@ -1,3 +1,10 @@
+local crashed = settings.get("curatorCrashed",false)
+
+if crashed then
+  settings.set("curatorCrashed",false)
+  settings.save()
+end
+
 term.setPaletteColor(colors.black, 0)
 term.setPaletteColour(colors.red, 0xd22b2b)
 --#region Initialization stuffs...
@@ -8,10 +15,11 @@ local output = peripheral.find("modem").getNameLocal()
 ---@diagnostic disable-next-line: param-type-mismatch
 local input = peripheral.find("create:item_vault")
 local spk = peripheral.find("speaker")
+local ratu = require("RATU")
 local history = {}
 --The length of the terminal history that you can scroll through.
 local historyLen = 10
-local version = "0.3.0"
+local version = "0.4.0"
 --#endregion
 
 --#region errors and stuff
@@ -44,28 +52,36 @@ local function genList(list)
   local items = {}
   local itemhash = {}
 
+--Deduplicates the mod names and item names
   for _, v in pairs(list) do
     local _, colon = v.name:find(":")
     local modname = v.name:sub(1, colon)
-
     if not modhash[modname] then
       modnames[#modnames + 1] = modname
       modhash[modname] = true
-      result[#result+1] = modname
     end
     if not itemhash[v.name] then
       items[#items + 1] = v.name
       itemhash[v.name] = true
     end
   end
-
+  
   table.sort(items, function(a, b)
     return #a < #b
   end)
+  table.sort(modnames, function(a, b)
+    return #a < #b
+  end)
+
+  for i, v in pairs(modnames) do
+    result[#result + 1] = v
+  end
   
   for i, v in pairs(items) do
     result[#result + 1] = v
   end
+
+
   return result
 end
 
@@ -106,106 +122,6 @@ local function extract(input,requests,output,blit)
   return remainder
 end
 
-
----Prints in fancy colors using codes!
----@param str string string containing control codes, &[0-9a-f] for foreground color, and &&[0-9a-f] for background.
----@param nl boolean? whether to insert a newline at the end
----|true
----|false
----@param ... unknown? passthrough for string.format, any format variables in the string can be references here.
-local function printColor(str,nl,...)
-  local indices = {}
-  local fstr = str:format(...)
-
-  --#region control code findery:tm:
-  local startIndex = 1
-  while true do
-    local start, finish, codeType
-    local doubleCodeStart, doubleCodeFinish = fstr:find("&&[0-9a-f]", startIndex)
-    local singleCodeStart, singleCodeFinish = fstr:find("&[0-9a-f]", startIndex)
-
-    if doubleCodeStart and (not singleCodeStart or doubleCodeStart < singleCodeStart) then
-        start, finish, codeType = doubleCodeStart, doubleCodeFinish, "bg"
-    elseif singleCodeStart then
-        start, finish, codeType = singleCodeStart, singleCodeFinish, "fg"
-    else
-        break
-    end
-    finish = finish or 0
-    -- Add new code
-    indices[#indices + 1] = {index = start, code = {codeType, fstr:sub(finish, finish)}}
-
-    -- Remove the current color code from the string
-    fstr = fstr:sub(1, start - 1) .. fstr:sub(finish + 1)
-    startIndex = start
-  end
-  --#endregion
-
-  --#region Splitting the string by control codes :3
-    local stringTable = {}
-    if #indices > 0 then
-      if indices[1].index >1 then
-        local index = #stringTable+1
-        stringTable[index] = {}
-        stringTable[index].str = fstr:sub(1,indices[1].index-1)
-      end
-      for key, value in pairs(indices) do
-        local stringEnd = indices[key+1] and indices[key+1].index-1 or #fstr
-        local index = #stringTable+1
-        stringTable[index] = {}
-        stringTable[index].str = fstr:sub(value.index,stringEnd)
-        stringTable[index].code = value.code
-      end
-    else
-      stringTable[1] = {["str"] = fstr}
-    end
-  --#endregion
-  for key, value in pairs(stringTable) do
-    if value.code then
-      if value.code[1] == "bg" then
-        term.setBackgroundColor(2^tonumber("0x"..value.code[2]))
-      elseif value.code[1] == "fg" then
-        term.setTextColor(2^tonumber("0x"..value.code[2]))
-      end
-    end
-    write(value.str)
-  end
-  if nl then print() end
-end
-
-
----Slowly writes a string on the screen using the printColor function chunk by chunk
----@param text string string containing color codes
----@param rate number the amount of time between chunks
----@param length number length of chunks
----@param nl? boolean new line?
-local function slowWrite(text,rate,length,nl)
-  
-  local wrapped = strings.wrap(text,term.getSize())
-
-  for key, lines in pairs(wrapped) do
-    local segments = {}
-    local startSegment = 1
-    while true do
-      local segment = lines:sub(startSegment,startSegment+length-1)
-      if segment:sub(#segment,#segment) == "&" then
-        segment = lines:sub(startSegment,startSegment+length+1)
-      end
-      segments[#segments+1] = segment
-      if (startSegment+length) > #lines then break end
-      startSegment = startSegment + #segment
-    end
-    for _, strs in pairs(segments) do
-      printColor(strs, false)
-      ---@diagnostic disable-next-line: undefined-field
-      if spk then spk.playSound("create:scroll_value",0.3,3) end
-      sleep(rate)
-    end
-    if key ~= #wrapped then print() end
-  end
-  if nl then print() end
-end
-
 ---Helper function, splits an input into its constituent words into a table
 ---@param text string
 ---@param char string
@@ -236,6 +152,7 @@ local function addHistory(history,item,historyLen)
   settings.set("curator_history", history)
   settings.save()
 end
+
 
 ---Checks whether element is contained within table
 ---@param table table
@@ -276,31 +193,20 @@ local function evaluateMathEquation(equation)
   return result
 end
 
-
 --#endregion
 
+
 --#region commands
-
----Helps enumerate the command names
----@param commands table
----@return table result
-local function getCommandList(commands)
-  local result = {}
-  for k,v in pairs(commands) do
-    result[#result+1] = k
-  end
-  return result
-end
-
 local commands = {
   ["help"] = {
     ["function"] = function (commands,params,itemList)
       if (params[2]) and (commands[params[2]]) and (commands[params[2]].description) then
-        slowWrite("&e> "..commands[params[2]].description,0.025, 5,true)
+        ratu.lengthwisePrint({text="&e> "..commands[params[2]].description,spk=spk,skippable=true,length=5,nl=true})
+        if commands[params[2]].hidden then sleep(1) commands["reboot"]["function"](commands,params,itemList) end
         return
       end
-      if params[2] and commands[params[2]] then
-        slowWrite("&e> That command doesn't have a description... weird",0.025, 5,true)
+      if (params[2] and commands[params[2]]) and (not commands[params[2]].hidden) then
+        ratu.lengthwisePrint({text="&e> That command doesn't have a description... weird",spk=spk,skippable=true,length=5,nl=true})
         return
       end
     commands.commands["function"](commands,params,itemList)
@@ -308,7 +214,7 @@ local commands = {
     ["autocomplete"] = function (commands,Itemlist)
       local result = {}
       for key,value in pairs(commands) do
-        if value.description then
+        if value.description and not value.hidden then
           table.insert(result, key)
         end
       end
@@ -319,14 +225,14 @@ local commands = {
 
   ["refresh"] = {
     ["function"] = function(commands, params, list)
-      slowWrite("&e> Refreshing index...", 0.025, 10, true)
+      ratu.lengthwisePrint({text="&e> Refreshing index...",spk=spk,skippable=true,length=5,nl=true})
     end,
-    ["description"] = "Just an idle command for when the computer should rescan the vault"
+    ["description"] = "Just an idle command for when the Curator should rescan the vault"
   },
 
   ["exit"] = {
     ["function"] = function(commands, params, list)
-      slowWrite("&e> Exiting program...", 0.025, 1, true)
+      ratu.lengthwisePrint({text="&e> Exiting program...",spk=spk,skippable=true,length=1,nl=true})
       return true
     end,
     ["description"] = "Exits the program, self explanatory"
@@ -342,16 +248,17 @@ local commands = {
       end
   
       local percent = math.floor(((total/slots)*100)+0.5)
-      slowWrite("&e> This vault has &0"..total.." &eitems in total!", 0.025, 10,true)
-      slowWrite("&e> Approximately &0"..percent.."%% &eitems in total!", 0.025, 10,true)
+      ratu.lengthwisePrint({text="&e> This vault has &0"..total.." &eitems in total!",spk=spk,skippable=true,length=5,nl=true})
+      ratu.lengthwisePrint({text="&e> Approximately &0"..percent.."%% &eitems in total!",spk=spk,skippable=true,length=5,nl=true})
     end,
-    ["description"] = "Gets a total amount of items in a vault, approximately"
+    ["description"] = "Gets a total amount of items in a vault, approximately&0*"
   },
 
   ["clear"] = {
     ["function"] = function(commands, params, list)
       term.clear()
       term.setCursorPos(1, 1)
+      ratu.lengthwisePrint({text="&e> Command/Item name?",spk=spk,skippable=false,length=5,nl=true})
     end,
     ["description"] = "Clears the terminal screen!"
   },
@@ -366,7 +273,7 @@ local commands = {
       local slot = tonumber(params[2]) or turtle.getSelectedSlot()
       ---@diagnostic disable-next-line: undefined-field
       local count = input.pullItems(output,slot)
-      slowWrite("&e> &0"..count.."&e item(s) have been deposited!", 0.025, 10,true)
+      ratu.lengthwisePrint({text="&e> &0"..count.."&e item(s) have been deposited!",spk=spk,skippable=true,length=5,nl=true})
     end,
     ["autocomplete"] = function(commands, Itemlist)
       local result = {}
@@ -386,7 +293,7 @@ local commands = {
       if tonumber(params[2]) < 1 then return end
       local slot = tonumber(params[2]) or 1
       turtle.select(slot)
-      slowWrite("&e> Selected slot &0".."#"..slot, 0.025, 10,true)
+      ratu.lengthwisePrint({text="&e> Selected slot &0".."#"..slot,spk=spk,skippable=true,length=5,nl=true})
     end,
     ["autocomplete"] = function(commands, Itemlist)
       local result = {}
@@ -395,7 +302,7 @@ local commands = {
       end
       return result
     end,
-    ["description"] = "Selects the slot from the Curator's inventory, not used for much, but the selected slot is the default value for &0\"Deposit\""
+    ["description"] = "Selects the slot from the Curator's inventory, not used for much, but the selected slot is the default value for &0\"Deposit\"",
   },
 
   ["forget"] = {
@@ -403,8 +310,12 @@ local commands = {
       history = {}
       settings.set("curator_history", {})
       settings.save()
+      ratu.lengthwisePrint({text="&e> Like it never happened...",spk=spk,skippable=true,length=5,nl=true})
     end,
-    ["description"] = "Clears the terminal history"
+    ["description"] = "Clears the terminal history",
+    ["autocomplete"] = function(commands, Itemlist)
+      return {"me already, Jeremy?"}
+    end,
   },
 
   ["dump"] = {
@@ -416,7 +327,7 @@ local commands = {
           count = count + input.pullItems(output,i)
         end
       end
-      slowWrite("&e> &0"..count.." item(s) have been dumped!", 0.025, 10,true)
+      ratu.lengthwisePrint({text="&e> &0"..count.." item(s) have been dumped!",spk=spk,skippable=true,length=5,nl=true})
     end,
     ["description"] = "Dumps the entire internal inventory to the connected vault"
   },
@@ -425,63 +336,182 @@ local commands = {
     ["function"] = function(commands, params, list)
       shell.run("lua")
     end,
-    ["description"] = "Starts the Lua REPL, useful for debugging, but not much else"
+    ["description"] = "Starts the &0Lua REPL&e, useful for debugging, but not much else"
   },
 
   ["history"] = {
     ["function"] = function(commands, params, list)
-      slowWrite("&e> Terminal history:", 0.025, 10,true)
-      slowWrite("&e> &0"..table.concat(history, ", "), 0.025, 10,true)
+      ratu.lengthwisePrint({text="&e> Terminal history:",spk=spk,skippable=true,length=5,nl=true})
+      ratu.lengthwisePrint({text="&e> &0"..table.concat(history, ", "),spk=spk,skippable=true,length=5,nl=true})
     end,
     ["description"] = "Lists the terminal history!"
   },
 
   ["commands"] = {
     ["function"] = function(commands, params, list)
-      slowWrite("&e> Available commands:", 0.025, 10,true)
-      slowWrite("&e> ", 0.025, 10,false)
+      ratu.lengthwisePrint({text="&e> Available commands:",spk=spk,skippable=true,length=5,nl=true})
       local commandNames = {}
       for key in pairs(commands) do
-        commandNames[#commandNames+1] = key
+        if not (commands[key].hidden) then
+          commandNames[#commandNames+1] = key
+        end
       end
-      slowWrite("&0"..table.concat(commandNames, ", "), 0.025, 10,true)
+      ratu.lengthwisePrint({text="&e> &0"..table.concat(commandNames, ", "),spk=spk,skippable=true,length=5,nl=true})
     end,
-    ["description"] = "This is to count items in a vault!"
+    ["description"] = "Lists all available commands!"
   },
 
   ["count"] = {
     ["function"] = function(commands, params, list)
       local count = 0
       if not params[2] then
-        slowWrite("&e> You must provide something to count!", 0.025, 10, true)
+        ratu.lengthwisePrint({text="&e> You must provide something to count!",spk=spk,skippable=true,length=5,nl=true})
         return
       end
       local result = searchItem(list, params[2], math.huge)
       if #result == 0 then
-        slowWrite("&e> No such item, I'm afraid.", 0.025, 10, true)
+        ratu.lengthwisePrint({text="&e> No such item, I'm afraid.",spk=spk,skippable=true,length=5,nl=true})
         return
       end
       for key, value in pairs(result) do
         count = count + value.count
       end
-      slowWrite("&e> I have found &0" .. count .. "&e items with that name", 0.025, 10, true)
+      ratu.lengthwisePrint({text="&e> I have found &0" .. count .. "&e items with that name",spk=spk,skippable=true,length=5,nl=true})
     end,
     ["autocomplete"] = function(commands, Itemlist)
       return Itemlist
     end,
     ["description"] = "This is to count items in a vault!"
   },
+  ["ratu"] = {
+    ["function"] = function (commands,params,itemList)
+      ratu.lengthwisePrint({text="&e> This is a brief test of a command utilising the &0RATU API&e in the curator.",spk=spk,skippable=true,length=5,nl=true})
+      ratu.lengthwisePrint({text="&e> This is a really long message that prints in segments excruciatingly slowly, but is skippable!",spk=spk,skippable=true,length=1,nl=true})
+      ratu.wordwisePrint({text="&e> This is a super long message that prints word by word, which is also skippable!",spk=spk,skippable=true,nl=true})
+      ratu.lengthwisePrint({text="&e> This &1is a &4demonstration &dof the RATU color &bcode system! &ahappy pride!",length=5,spk=spk,skippable=false,nl=true})
+    end,
+    ["description"] = "Test command for the &0RATU&e api implementation.",
+  },
+  ["colored"] = {
+    ["function"] = function (commands,params,itemList)
+      ratu.lengthwisePrint({text="&e> Input some text and I will echo it after applying the color codes!",spk=spk,skippable=false,length=5,nl=true})
+      ratu.lengthwisePrint({text="&d> &0",spk=spk,skippable=false,length=5})
+      local userInput = read()
+      ratu.lengthwisePrint({text=tostring(userInput).."&e &&f",spk=spk,skippable=false,length=5,nl=true})
+    end,
+    ["description"] = "Have some fun with the RATU color codes!",
+  },
+  ["changelog"] = {
+    ["function"] = function (commands,params,itemList)
+      ratu.lengthwisePrint({text="&e> Version &00.4.1&e hotfix! This is a short one.",spk=spk,skippable=true,length=5,nl=true})
+      os.pullEvent("key")
+      ratu.lengthwisePrint({text="&e> New command added: &0\"search\"&e, that will search through the vault for a keyword, helpful for those items with a lot of variations!",spk=spk,skippable=true,length=5,nl=true})
+      os.pullEvent("key")
+      ratu.lengthwisePrint({text="&e> Fixed a bug where the &0\"dump\"&e command had incorrect coloring.",spk=spk,skippable=true,length=5,nl=true})
+      os.pullEvent("key")
+      ratu.lengthwisePrint({text="&e> Fixed incorrect autocomplete generation.",spk=spk,skippable=true,length=5,nl=true})
+      os.pullEvent("key")
+      ratu.lengthwisePrint({text="&e> The startup dialogue is now correctly skippable!",spk=spk,skippable=true,length=5,nl=true})
+      os.pullEvent("key")
+      ratu.lengthwisePrint({text="&e> Secrets, secrets and more secrets!",spk=spk,skippable=true,length=5,nl=true})
+      os.pullEvent("key")
+    end,
+    ["description"] = "Prints the latest changelog for the program!!",
+  },
 
+  ["waiting"] = {
+    ["function"] = function (commands,params,itemList)
+      ratu.lengthwisePrint({text="&&0&f aaa_b_aa_abaa_abaa abb_ab_aa_b_aa_ba_bba ababab ababab ababab &&f",spk=spk,skippable=true,length=5,nl=true})
+      commands["crash"]["function"](commands,params,itemList)
+    end,
+    ["description"] = "Will you?",
+    ["autocomplete"] = function(commands, Itemlist)
+      return {"for so long..."}
+    end,
+    ["hidden"] = true,
+  },
 
+  ["hidden"] = {
+    ["function"] = function (commands,params,itemList)
+      ratu.lengthwisePrint({text="&e> Did you know that there are some commands that are &0hidden&e?",delay=0.1,spk=spk,skippable=false,length=5,nl=true})
+      sleep(1)
+      ratu.lengthwisePrint({text="&0 =)",spk=spk,skippable=true,length=5,nl=true})
+      sleep(1)
+      commands["reboot"]["function"](commands,params,itemList)
+    end,
+    ["description"] = "And they might have secret descriptions too.... :3",
+    ["autocomplete"] = function(commands, Itemlist)
+      return {"mysteries..."}
+    end,
+    ["hidden"] = true,
+  },
+  ["reboot"] = {
+    ["function"] = function (commands,params,itemList)
+      os.reboot()
+    end,
+    ["description"] = "Reboots the Curator",
+  },
+  ["crash"] = {
+    ["function"] = function (commands,params,itemList)
+      settings.set("curatorCrashed", true)
+      settings.save()
+      term.setPaletteColor(colors.black, 0x040480)
+      spk.playSound("watching:event.crash",0.5,0.7)
+      sleep(2)
+      os.reboot()
+    end,
+    ["description"] = "You're not supposed to see this.",
+    ["hidden"] = true,
+  },
+  ["search"] = {
+    ["function"] = function (commands,params,itemList)
+      if not (type(params[2]) == "string") then
+        ratu.lengthwisePrint({text="&e> Please provide a valid search term!\n&e> Usage:&0 search <searchterm>",spk=spk,skippable=true,length=5,nl=true})
+        return
+      end
+
+      local keyResults = {}
+      local results = {}
+      for _,itemName in pairs(itemList) do
+        local colon = itemName.name:find(":")
+        if itemName.name:find(params[2],colon+1) then
+          keyResults[itemName.name] = true
+        end
+      end
+
+      for key, _ in pairs(keyResults) do
+        results[#results+1] = key
+      end
+
+      if #results < 1 then
+        ratu.lengthwisePrint({text="&e> Nothing with that keyword found unfortunately!",spk=spk,skippable=true,length=5,nl=true})
+        return
+      end
+
+      local resultString = table.concat(results,",\n")
+      ratu.lengthwisePrint({text="&e> Search results:&0",spk=spk,skippable=true,length=5,nl=true})
+      ratu.lengthwisePrint({text=resultString,spk=spk,skippable=true,length=10,nl=true})
+    end,
+    ["description"] = "Search item by keyword, for those annoying items with colors in their names! Supports lua patterns but only searches the item name, not mod name",
+  },
+  ["duckchess"] = {
+    ["function"] = function (commands,params,itemList)
+      ratu.lengthwisePrint({text=("Duck Chess\n"):rep(25),delay = 0.1,spk=spk,skippable=false,length=5,nl=true})
+      commands["crash"]["function"](commands,params,itemList)
+    end,
+    ["description"] = ("Duck Chess\n"):rep(25),
+    ["autocomplete"] = function(commands, Itemlist)
+      return {("Duck Chess\n"):rep(25)}
+    end,
+    ["hidden"] = true,
+  },
 }
 --#endregion commands
-
 local function loop()
   ---@diagnostic disable-next-line: undefined-field
   local itemList = input.list()
   local itemListAutocomplete = genList(itemList)
-  slowWrite("&e> Command/Item name?",0.025, 5,true)
-  slowWrite("&d> &0", 0.025, 3)
+  ratu.lengthwisePrint({text="&d> &0",skippable=false,length=5,nl=false})
 
   local request = read(nil, history
   ,function(text)
@@ -495,7 +525,9 @@ local function loop()
       end
       local fullautocomplete = {}
       for k,v in pairs(commands) do
-        table.insert(fullautocomplete, k)
+        if not (commands[k].hidden) then
+          table.insert(fullautocomplete, k)
+        end
       end
       for k,v in pairs(itemListAutocomplete) do
         table.insert(fullautocomplete, v)
@@ -510,7 +542,6 @@ local function loop()
 
   local args = splitWords(request, " ")
   if commands[args[1]] then
-    addHistory(history, request, historyLen)
     return commands[args[1]]["function"](commands,args,itemList)
   elseif args[1] and tonumber(args[2]) then
     
@@ -518,15 +549,15 @@ local function loop()
     local packet, remainder = searchItem(itemList, args[1], math.ceil(count))
     addHistory(history, request, historyLen)
     local moved = count - remainder
-    slowWrite("&e> Extracting &0"..moved.."&e item(s) from the vault!", 0.025, 10,true)
+    ratu.lengthwisePrint({text="&e> Extracting &0"..moved.."&e item(s) from the vault!",spk=spk,skippable=true,length=5,nl=true})
     extract(input, packet, output)
 
   elseif contains(itemListAutocomplete, args[1]) then
     local result
 
     repeat
-    slowWrite("&e> Item count? \"cancel\" to cancel", 0.025, 10,true)
-    slowWrite("&d#> &0", 0.025, 10,false)
+    ratu.lengthwisePrint({text="&e> Item count? &0\"cancel\"&e to cancel",spk=spk,skippable=true,length=5,nl=true})
+    ratu.lengthwisePrint({text="&d#> &0",spk=spk,skippable=false,length=5,nl=false})
     local userInput = read(nil,nil,function (text)
       if #text <= 0 then return {""} end
       return complete.choice(text,{"cancel",""}) or {""}
@@ -542,10 +573,11 @@ local function loop()
     local packet, remainder = searchItem(itemList, args[1],count or 0)
     local moved = count - remainder
 
-    slowWrite("&e> Extracting &0"..moved.."&e item(s) from the vault!", 0.025, 10,true)
+    ratu.lengthwisePrint({text="&e> Extracting &0"..moved.."&e item(s) from the vault!",spk=spk,skippable=true,length=5,nl=true})
     extract(input, packet, output)
   else
-    slowWrite("&e> Unknown command or item name",0.025, 10,true)
+    addHistory(history, request, historyLen)
+    ratu.lengthwisePrint({text="&e> Unknown command or item name",spk=spk,skippable=true,length=5,nl=true})
   end
 end
 
@@ -559,10 +591,19 @@ if spk then
 end
 sleep(0.5)
 
-slowWrite("&e> My name is the Curator &0V"..version.."&e!", 0.025, 15,true)
-slowWrite("&e> My job is to make sure you can interact with the Archivist's storage!", 0.025, 15,true)
+local intro = [[
+&e> My name is the Curator &0V]]..version..[[&e!
+&e> My job is to make sure you can interact with the Archivist's storage!
+&e> If you don't know what to do, try using &0"help"&e!
+&e> Command/Item name?"
+]]
 
-slowWrite("&e> If you don't know what to do, try using &0\"help\"&e!", 0.025, 15,true)
+
+if not crashed then
+  ratu.lengthwisePrint({text=intro,spk=spk,skippable=true,length=5})
+else
+  ratu.lengthwisePrint({text="&e> It seems the Curator system has encountered corrupted data and quit unexpectedly... This incident has been reported.",spk=spk,skippable=true,length=5,nl=true})
+end
 repeat
   local exit = loop()
 until exit == true
