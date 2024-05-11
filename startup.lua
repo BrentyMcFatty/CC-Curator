@@ -28,7 +28,7 @@ local ratu = require("RATU")
 local history = {}
 --The length of the terminal history that you can scroll through.
 local historyLen = 10
-local version = "0.4.2"
+local version = "0.4.3"
 local clearDisplay = settings.get("curatorClearDisplay", false)
 local smile = settings.get("curatorSmile", false)
 --#endregion
@@ -459,6 +459,35 @@ local commands = {
       return Itemlist
     end,
     ["description"] = "This is to count items in a vault!"
+  },
+  ["update"] = {
+    ["function"] = function(commands, params, list)
+      if not http.checkURL("http://google.com") then
+        ratu.lengthwisePrint({ text = "&e> No internet connection available... It is just us here.", spk = spk, skippable = true, length = 5, nl = true })
+        return
+      end
+      if not http.checkURL("https://raw.githubusercontent.com/razvii22/CC-Curator/main/startup.lua") then
+        ratu.lengthwisePrint({ text = "&e> Could not connect to the Github repository... how strange", spk = spk, skippable = true, length = 5, nl = true })
+        return
+      end
+      local newCode = http.get("https://raw.githubusercontent.com/razvii22/CC-Curator/main/startup.lua").readAll()
+      if not newCode then
+        ratu.lengthwisePrint({ text = "&e> An unknown error occurred...", spk = spk, skippable = true, length = 5, nl = true })
+        return
+      end
+      fs.delete("/startup.lua")
+      local file = fs.open("/startup.lua","w")
+      if file then
+        file.write(newCode)
+        file.close()
+      end
+      ratu.lengthwisePrint({ text = "&e> Update successful. Rebooting!", spk = spk, skippable = true, length = 5, nl = true })
+      commands["exit"]["function"]()
+    end,
+    ["autocomplete"] = function(commands, Itemlist)
+      return {}
+    end,
+    ["description"] = "Tries to update the curator from the web repository."
   },
   ["ratu"] = {
     ["function"] = function(commands, params, itemList)
