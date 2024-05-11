@@ -28,7 +28,7 @@ local ratu = require("RATU")
 local history = {}
 --The length of the terminal history that you can scroll through.
 local historyLen = 10
-local version = "0.4.1p"
+local version = "0.4.2"
 local clearDisplay = settings.get("curatorClearDisplay", false)
 local smile = settings.get("curatorSmile", false)
 --#endregion
@@ -698,9 +698,16 @@ local function main()
     extract(input, packet, output)
   elseif contains(itemListAutocomplete, args[1]) then
     local result
-
+    --Count items for the dialogue
+    local count = 0
+    local packet, _ = searchItem(itemList, args[1], math.huge)
+    for key, value in pairs(packet) do
+      count = count + value.count
+    end
+    --
     repeat
       ratu.lengthwisePrint({ text = "&e> Item count? &0\"cancel\"&e to cancel", spk = spk, skippable = true, length = 5, nl = true })
+      ratu.lengthwisePrint({ text = "&e> &0"..count.."&e items available", spk = spk, skippable = true, length = 5, nl = true })
       ratu.lengthwisePrint({ text = "&d#> &0", spk = spk, skippable = false, length = 5, nl = false })
       local userInput = read(nil, nil, function(text)
         if #text <= 0 then return { "" } end
