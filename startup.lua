@@ -482,6 +482,7 @@ local commands = {
         file.close()
       end
       ratu.lengthwisePrint({ text = "&e> Update successful. Rebooting!", spk = spk, skippable = true, length = 5, nl = true })
+      sleep(2)
       commands["reboot"]["function"]()
     end,
     ["autocomplete"] = function(commands, Itemlist)
