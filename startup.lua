@@ -28,7 +28,7 @@ local ratu = require("RATU")
 local history = {}
 --The length of the terminal history that you can scroll through.
 local historyLen = 10
-local version = "0.4.3"
+local version = "0.4.4"
 local clearDisplay = settings.get("curatorClearDisplay", false)
 local smile = settings.get("curatorSmile", false)
 --#endregion
@@ -482,7 +482,7 @@ local commands = {
         file.close()
       end
       ratu.lengthwisePrint({ text = "&e> Update successful. Rebooting!", spk = spk, skippable = true, length = 5, nl = true })
-      commands["exit"]["function"]()
+      commands["reboot"]["function"]()
     end,
     ["autocomplete"] = function(commands, Itemlist)
       return {}
