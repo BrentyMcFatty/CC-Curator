@@ -1,35 +1,46 @@
+---Main entry file, also the backend
+
+---reads whether Curator "crashed" last time it started up, this is purely for theatrics, it changes the startup message next time Curator starts up.
 local crashed = settings.get("curatorCrashed", false)
 
---debug screen
-local mon = nil
-if ({ ... })[1] == "debug" then
-  mon = peripheral.find("monitor")
-end
-
-
+---marks curator as not crashed for the next time it starts up, this doesn't affect the "crashed" variable
 if crashed then
   settings.set("curatorCrashed", false)
   settings.save()
 end
 
+--debug screen, prints to it instead of the mechanical display for convenience, only runs if Curator starts with the "debug" flag
+local mon = nil
+if ({ ... })[1] == "debug" then
+  mon = peripheral.find("monitor")
+end
+
+---sets colors
 term.setPaletteColor(colors.black, 0)
 term.setPaletteColour(colors.red, 0xd22b2b)
+
 --#region Initialization stuffs...
 local complete = require("cc.completion")
 local strings = require("cc.strings")
----@diagnostic disable-next-line: undefined-field
+
 local output = peripheral.find("modem").getNameLocal()
 ---@diagnostic disable-next-line: param-type-mismatch
 local input = peripheral.find("create:item_vault")
+---@type ccTweaked.peripherals.Speaker
 local spk = peripheral.find("speaker")
 ---@diagnostic disable-next-line: param-type-mismatch
 local mechDisplay = peripheral.find("create_source")
+
 local ratu = require("RATU")
 local history = {}
 --The length of the terminal history that you can scroll through.
-local historyLen = 10
-local version = "0.4.4"
+local historyLen = 20
+local version = "0.4.4a"
+
+---controls whether the mechanical display gets cleared before it prints, may be deprecated.
 local clearDisplay = settings.get("curatorClearDisplay", false)
+
+---have you smiled today?
 local smile = settings.get("curatorSmile", false)
 --#endregion
 
@@ -100,8 +111,6 @@ local function genDisplayList(inventory, list, width, height)
     sleep(0)
   end
 
-
-
   return result
 end
 
@@ -149,7 +158,7 @@ local function genList(list)
   return result
 end
 
----Generates a list of items that must be moved in order to satisfy the user's request, not the full IRP protocol
+---Generates a list of items that must be moved in order to satisfy the user's request
 ---@param list table
 ---@param item string
 ---@param count number
@@ -178,6 +187,7 @@ end
 ---@param requests table the requests to process
 ---@param output string the inventory to extract to
 ---@return number remainder the remaining items that were not transferred for whatever reason(IE not enough items in inventory or output full)
+---TODO make classes.
 local function extract(input, requests, output, blit)
   local remainder = 0
   for key, request in pairs(requests) do
@@ -260,9 +270,13 @@ end
 --#endregion
 
 
---#region commands
+--#region commands, the list of commands the terminal uses, "help" is the template and has comments pertaining to each entry's use
 local commands = {
   ["help"] = {
+    ---The function field is called when the name of this command is invoked
+    ---@param commands table the commands table, passed so commands are aware of the existence of other commands and can call them correctly
+    ---@param params table a list of every space delimeted parameter passed to this command
+    ---@param itemList table the list of items currently in memory
     ["function"] = function(commands, params, itemList)
       if (params[2]) and (commands[params[2]]) and (commands[params[2]].description) then
         ratu.lengthwisePrint({ text = "&e> " .. commands[params[2]].description, spk = spk, skippable = true, length = 5, nl = true })
@@ -276,8 +290,12 @@ local commands = {
         ratu.lengthwisePrint({ text = "&e> That command doesn't have a description... weird", spk = spk, skippable = true, length = 5, nl = true })
         return
       end
-      commands.commands["function"](commands, params, itemList)
     end,
+    ---(optional)The autocomplete function is called when this command is written in the terminal and then space is pressed.
+    ---the return of this function is given to the autocomplete function of the terminal as a list of possible autocompletes.
+    ---@param commands table the commands table, passed so commands such as "help" can enumerate other commands
+    ---@param Itemlist table the item list in memory, passed so commands such as "count" can enumerate items
+    ---@return table autocomplete the autocomplete table passed to the autocomplete function.
     ["autocomplete"] = function(commands, Itemlist)
       local result = {}
       for key, value in pairs(commands) do
@@ -287,6 +305,8 @@ local commands = {
       end
       return result
     end,
+    ---(optional)The description of the command, this will get printed out when help is called with this command as its parameter.
+    ---Supports RATU control codes!
     ["description"] = "This command! You can use it to see what other commands do!",
   },
   ["refresh"] = {
@@ -650,6 +670,9 @@ local commands = {
   },
 }
 
+
+---Easter egg command, also displays how commands can be added and removed dynamically, once the smile command is called once,
+---it sets a variable in the settings, making it so the command is no longer available.
 if mechDisplay and not smile then
   commands.smile = {
     ["function"] = function(commands, params, itemList)
@@ -681,7 +704,11 @@ if mechDisplay and not smile then
 end
 
 --#endregion commands
+
 local itemListAutocomplete
+
+---The main function! God help your soul.
+---@return unknown
 local function main()
   ---@diagnostic disable-next-line: undefined-field
   local itemList = input.list()
@@ -784,13 +811,14 @@ else
   ratu.lengthwisePrint({
     text =
     "&e> It seems the Curator system has encountered corrupted data and quit unexpectedly... This incident has been reported.\n> Data expunged.",
-    spk =
-        spk,
+    spk = spk,
     skippable = true,
     length = 5,
     nl = true
   })
 end
+
+---This region needs to be rewritten.
 
 local function updateDisplay()
   while true do sleep(60 * 60) end

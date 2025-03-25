@@ -1,3 +1,6 @@
+--- RATU or Razvii's Advanced Terminal Utilities is effectively the frontend of Curator.
+--- This library will be eventually deprecated and moved to its own repository under a different name.
+--- I strongly advise NOT reading this code too much, it is not good.
 local strings = require("cc.strings")
 local ratu = {}
 

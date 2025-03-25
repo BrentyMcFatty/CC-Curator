@@ -1,11 +1,12 @@
 {
-  "Lua.workspace.library": [
-    "/home/razvii/.config/Code/User/globalStorage/sumneko.lua/addonManager/addons/cc-tweaked/module/library"
-  ],
-  "Lua.runtime.version": "Lua 5.3",
-  "Lua.workspace.checkThirdParty": false,
-  "Lua.runtime.builtin": {
-    "io": "disable",
-    "os": "disable"
-  }
+    "Lua.workspace.library": [
+        "${addons}/cc-tweaked/module/library",
+        "./createPeripherals.lua"
+    ],
+    "Lua.runtime.version": "Lua 5.3",
+    "Lua.runtime.builtin": {
+        "io": "disable",
+        "os": "disable"
+    },
+    "Lua.workspace.checkThirdParty": false,
 }
