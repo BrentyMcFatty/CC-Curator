@@ -267,6 +267,19 @@ local function evaluateMathEquation(equation)
   return result
 end
 
+---Maps function over table values
+---@param table table
+---@param func function Function with 2 arguments to map
+---@return table
+local function mapKeyValues(table, func)
+  local result = {}
+  for k, v in pairs(table) do
+    result[k] = func(k, v)
+  end
+
+  return result
+end
+
 --#endregion
 
 
@@ -309,6 +322,76 @@ local commands = {
     ---Supports RATU control codes!
     ["description"] = "This command! You can use it to see what other commands do!",
   },
+
+  ["retrieve"] = {
+    ["function"] = function(commands, params, list)
+      local itemSet = {}
+      for _, v in pairs(list) do
+        itemSet[v] = true
+      end
+      
+      if itemSet[params[1]] then
+        if params[1] and tonumber(params[2]) then
+          local count = math.ceil(params[2])
+          local packet, remainder = searchItem(itemList, params[1], math.ceil(count))
+          addHistory(history, table.concat(params, " "), historyLen)
+          local moved = count - remainder
+          ratu.lengthwisePrint({ text = "&e> Extracting &0" .. moved .. "&e item(s) from the vault!", spk = spk, skippable = true, length = 5, nl = true })
+          extract(input, packet, output)
+        else
+          local result
+          --Count items for the dialogue
+          local count = 0
+          local packet, _ = searchItem(itemList, params[1], math.huge)
+          for key, value in pairs(packet) do
+            count = count + value.count
+          end
+          --
+          repeat
+            ratu.lengthwisePrint({ text = "&e> Item count? &0\"cancel\"&e to cancel", spk = spk, skippable = true, length = 5, nl = true })
+            ratu.lengthwisePrint({ text = "&e> &0"..count.."&e items available", spk = spk, skippable = true, length = 5, nl = true })
+            ratu.lengthwisePrint({ text = "&d#> &0", spk = spk, skippable = false, length = 5, nl = false })
+            local userInput = read(nil, nil, function(text)
+              if #text <= 0 then return { "" } end
+              return complete.choice(text, { "cancel", "" }) or { "" }
+            end)
+            if userInput == "cancel" then return end
+            result, error = evaluateMathEquation(userInput)
+          until tonumber(result)
+      
+          local count = math.ceil(tonumber(result) or 0)
+      
+          addHistory(history, tostring(request .. " " .. count), historyLen)
+      
+          local packet, remainder = searchItem(itemList, params[1], count or 0)
+          local moved = count - remainder
+      
+          ratu.lengthwisePrint({ text = "&e> Extracting &0" .. moved .. "&e item(s) from the vault!", spk = spk, skippable = true, length = 5, nl = true })
+          extract(input, packet, output)
+        end
+      else
+        -- improper use
+      end
+    end,
+    ["description"] = "Retrieve by item id and deposit in turtle inventory"
+  },
+
+  ["harvest"] = {
+    ["function"] = function(commands, params, list)
+      local itemName = params[1]
+
+      local displayNameList = {}
+      for slot, _ in pairs(list) do
+        local itemDetail = input.getItemDetail(slot)
+        if itemDetail then
+          local displayName = itemDetail["displayName"]
+          displayNameList[slot] = displayName
+        end
+      end
+    end,
+    ["description"] = "Retrieve by item display name and deposit in connected inventory despacito!"
+  },
+
   ["refresh"] = {
     ["function"] = function(commands, params, list)
       ratu.lengthwisePrint({ text = "&e> Refreshing index...", spk = spk, skippable = true, length = 5, nl = true })
@@ -707,12 +790,16 @@ end
 
 local itemListAutocomplete
 
----The main function! God help your soul.
+---The main function! God help your soul 😈.
 ---@return unknown
 local function main()
   ---@diagnostic disable-next-line: undefined-field
   local itemList = input.list()
   itemListAutocomplete = genList(itemList)
+  local itemSet = {}
+  for _, v in pairs(itemList) do
+    itemSet[v] = true
+  end
   ratu.lengthwisePrint({ text = "&d> &0", skippable = false, length = 5, nl = false })
 
   local request = read(nil, history
@@ -742,51 +829,18 @@ local function main()
 
   if (request == "") then return end
 
-  local args = splitWords(request, " ")
-  if commands[args[1]] then
+  local params = splitWords(request, " ")
+  if commands[params[1]] then
     addHistory(history, request, historyLen)
-    return commands[args[1]]["function"](commands, args, itemList)
-  elseif args[1] and tonumber(args[2]) then
-    local count = math.ceil(args[2])
-    local packet, remainder = searchItem(itemList, args[1], math.ceil(count))
-    addHistory(history, request, historyLen)
-    local moved = count - remainder
-    ratu.lengthwisePrint({ text = "&e> Extracting &0" .. moved .. "&e item(s) from the vault!", spk = spk, skippable = true, length = 5, nl = true })
-    extract(input, packet, output)
-  elseif contains(itemListAutocomplete, args[1]) then
-    local result
-    --Count items for the dialogue
-    local count = 0
-    local packet, _ = searchItem(itemList, args[1], math.huge)
-    for key, value in pairs(packet) do
-      count = count + value.count
-    end
-    --
-    repeat
-      ratu.lengthwisePrint({ text = "&e> Item count? &0\"cancel\"&e to cancel", spk = spk, skippable = true, length = 5, nl = true })
-      ratu.lengthwisePrint({ text = "&e> &0"..count.."&e items available", spk = spk, skippable = true, length = 5, nl = true })
-      ratu.lengthwisePrint({ text = "&d#> &0", spk = spk, skippable = false, length = 5, nl = false })
-      local userInput = read(nil, nil, function(text)
-        if #text <= 0 then return { "" } end
-        return complete.choice(text, { "cancel", "" }) or { "" }
-      end)
-      if userInput == "cancel" then return end
-      result, error = evaluateMathEquation(userInput)
-    until tonumber(result)
+    return commands[params[1]]["function"](commands, params, itemList)
 
-    local count = math.ceil(tonumber(result) or 0)
-
-    addHistory(history, tostring(request .. " " .. count), historyLen)
-
-    local packet, remainder = searchItem(itemList, args[1], count or 0)
-    local moved = count - remainder
-
-    ratu.lengthwisePrint({ text = "&e> Extracting &0" .. moved .. "&e item(s) from the vault!", spk = spk, skippable = true, length = 5, nl = true })
-    extract(input, packet, output)
+  elseif itemSet[params[1]] then
+    return commands["retrieve"]["function"](commands, params, itemList)
   else
     addHistory(history, request, historyLen)
     ratu.lengthwisePrint({ text = "&e> Unknown command or item name", spk = spk, skippable = true, length = 5, nl = true })
   end
+  return 0
 end
 
 --#region end stuff
