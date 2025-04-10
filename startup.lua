@@ -23,7 +23,7 @@ term.setPaletteColour(colors.red, 0xd22b2b)
 local complete = require("cc.completion")
 local strings = require("cc.strings")
 
-local output = peripheral.find("modem").getNameLocal()
+local output = assert(settings.get("output"), "You fool, you incapable mongoloid.. you done fucked uppe!")
 ---@diagnostic disable-next-line: param-type-mismatch
 local input = peripheral.find("create:item_vault")
 ---@type ccTweaked.peripherals.Speaker
@@ -394,15 +394,44 @@ local commands = {
   ["harvest"] = {
     ["function"] = function(commands, params, list)
       local itemName = params[2]
+      local item
 
       local displayNameList = {}
-      for slot, _ in pairs(list) do
+      for slot, v in pairs(list) do
+        local itemDetail = input.getItemDetail(slot)
+        if itemDetail then
+          local displayName = itemDetail["displayName"]
+          displayNameList[displayName:lower()] = v.name
+        end
+      end
+
+      item = displayNameList[itemName]
+
+      local packet, remainder = searchItem(list, item, 1)
+      remainder = extract(input, packet, output)
+
+      if remainder == 1 then
+        -- tried to print invalid item
+        return
+      end
+
+      -- start printing
+      -- end printing
+
+      -- return book to storage (POC) 
+      -- extract(output, packet, input)
+    end,
+    ["autocomplete"] = function(commands, Itemlist)
+      local displayNameList = {}
+      for slot, _ in pairs(Itemlist) do
         local itemDetail = input.getItemDetail(slot)
         if itemDetail then
           local displayName = itemDetail["displayName"]
           displayNameList[slot] = displayName
         end
       end
+
+      return displayNameList
     end,
     ["description"] = "Retrieve by item display name and deposit in connected inventory despacito!"
   },
