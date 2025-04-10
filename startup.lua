@@ -327,14 +327,26 @@ local commands = {
     ["function"] = function(commands, params, list)
       local itemSet = {}
       for _, v in pairs(list) do
-        itemSet[v] = true
+        itemSet[v.name] = true
+      end
+
+      local request = table.concat(params, " ")
+      local item
+      local count
+
+      if params[1] == "retrieve" then
+        item = params[2]
+        count = params[3]
+      else
+        item = params[1]
+        count = params[2]
       end
       
-      if itemSet[params[1]] then
-        if params[1] and tonumber(params[2]) then
-          local count = math.ceil(params[2])
-          local packet, remainder = searchItem(itemList, params[1], math.ceil(count))
-          addHistory(history, table.concat(params, " "), historyLen)
+      if itemSet[item] then
+        if item and tonumber(count) then
+          local count = math.ceil(count)
+          local packet, remainder = searchItem(list, item, math.ceil(count))
+          addHistory(history, request, historyLen)
           local moved = count - remainder
           ratu.lengthwisePrint({ text = "&e> Extracting &0" .. moved .. "&e item(s) from the vault!", spk = spk, skippable = true, length = 5, nl = true })
           extract(input, packet, output)
@@ -342,7 +354,7 @@ local commands = {
           local result
           --Count items for the dialogue
           local count = 0
-          local packet, _ = searchItem(itemList, params[1], math.huge)
+          local packet, _ = searchItem(list, item, math.huge)
           for key, value in pairs(packet) do
             count = count + value.count
           end
@@ -359,11 +371,11 @@ local commands = {
             result, error = evaluateMathEquation(userInput)
           until tonumber(result)
       
-          local count = math.ceil(tonumber(result) or 0)
+          count = math.ceil(tonumber(result) or 0)
       
           addHistory(history, tostring(request .. " " .. count), historyLen)
       
-          local packet, remainder = searchItem(itemList, params[1], count or 0)
+          local packet, remainder = searchItem(list, item, count or 0)
           local moved = count - remainder
       
           ratu.lengthwisePrint({ text = "&e> Extracting &0" .. moved .. "&e item(s) from the vault!", spk = spk, skippable = true, length = 5, nl = true })
@@ -373,12 +385,15 @@ local commands = {
         -- improper use
       end
     end,
+    ["autocomplete"] = function(commands, Itemlist)
+      return Itemlist
+    end,
     ["description"] = "Retrieve by item id and deposit in turtle inventory"
   },
 
   ["harvest"] = {
     ["function"] = function(commands, params, list)
-      local itemName = params[1]
+      local itemName = params[2]
 
       local displayNameList = {}
       for slot, _ in pairs(list) do
@@ -798,7 +813,7 @@ local function main()
   itemListAutocomplete = genList(itemList)
   local itemSet = {}
   for _, v in pairs(itemList) do
-    itemSet[v] = true
+    itemSet[v.name] = true
   end
   ratu.lengthwisePrint({ text = "&d> &0", skippable = false, length = 5, nl = false })
 
